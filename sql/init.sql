@@ -2,6 +2,9 @@
 -- Sistema de Gestión de Ventas e Inventario
 -- ==========================================
 
+-- 0. Extensiones necesarias en PostgreSQL/Supabase
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- 1. Tablas y Relaciones
 CREATE TABLE IF NOT EXISTS clientes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -47,6 +50,30 @@ CREATE TABLE IF NOT EXISTS detalles_venta (
   subtotal NUMERIC(14, 2) NOT NULL CHECK (subtotal >= 0)
 );
 
+-- Tablas adicionales para auth y transacciones financieras
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  creado_en TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  balance NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+  label TEXT,
+  creado_en TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ledger_movements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  from_account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  to_account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ==========================================
 -- 2. Índices de optimización
 -- ==========================================
@@ -61,15 +88,14 @@ CREATE INDEX IF NOT EXISTS idx_detalles_producto ON detalles_venta(id_producto);
 CREATE OR REPLACE FUNCTION fn_actualizar_stock()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Validar que haya stock suficiente
-  IF (SELECT stock FROM productos WHERE id = NEW.id_producto) < NEW.cantidad THEN
-    RAISE EXCEPTION 'Stock insuficiente para el producto con ID %', NEW.id_producto;
-  END IF;
-
-  -- Actualizar el inventario restando la cantidad vendida
+  -- Actualizar el inventario restando la cantidad vendida de forma atómica.
   UPDATE productos
   SET stock = stock - NEW.cantidad
-  WHERE id = NEW.id_producto;
+  WHERE id = NEW.id_producto AND stock >= NEW.cantidad;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Stock insuficiente para el producto con ID %', NEW.id_producto;
+  END IF;
 
   RETURN NEW;
 END;
@@ -107,6 +133,17 @@ JOIN ventas v ON v.id = d.id_venta
 WHERE v.estado = 'COMPLETADA'
 GROUP BY p.id, p.nombre
 ORDER BY total_vendido DESC;
+
+-- Ventas Mensuales
+CREATE OR REPLACE VIEW vw_ventas_mensuales AS
+SELECT
+  DATE_TRUNC('month', fecha) as mes_venta,
+  COUNT(id) as total_operaciones,
+  SUM(total) as monto_total
+FROM ventas
+WHERE estado = 'COMPLETADA'
+GROUP BY DATE_TRUNC('month', fecha)
+ORDER BY mes_venta DESC;
 
 -- ==========================================
 -- 5. Procedimiento Almacenado de Registro de Venta
