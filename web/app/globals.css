@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   --bg-primary: #050816;
   --bg-secondary: rgba(14, 23, 42, 0.92);
@@ -31,8 +33,28 @@ body {
     var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
-  display: flex;
   overflow-x: hidden;
+}
+
+main {
+  min-height: 100vh;
+  margin-left: 18rem;
+  padding: 2.5rem 2rem;
+  background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.98));
+  transition: var(--transition);
+}
+
+.page-shell {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+@media (max-width: 1024px) {
+  main {
+    margin-left: 0;
+    padding: 1.5rem 1rem;
+  }
 }
 
 /* Glassmorphism Utilities */

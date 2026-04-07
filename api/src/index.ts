@@ -57,6 +57,11 @@ app.get("/", (_req, res) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`API http://localhost:${port}`);
-});
+// Export app for testing
+export { app };
+
+if (import.meta.url.endsWith(process.argv[1])) {
+  app.listen(port, () => {
+    console.log(`API http://localhost:${port}`);
+  });
+}

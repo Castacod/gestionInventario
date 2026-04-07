@@ -1,265 +1,193 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { api, getToken, setToken } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import {
+  DollarSign,
+  Package,
+  Users,
+  Truck,
+  TrendingUp,
+  ShoppingCart,
+} from "lucide-react";
+import { api } from "@/lib/api";
 
-type Account = { id: string; balance: string; label: string | null };
+type Stats = {
+  totalVentas: number;
+  totalProductos: number;
+  totalClientes: number;
+  totalProveedores: number;
+  ventasMes: number;
+  productosBajoStock: number;
+};
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const [me, setMe] = useState<{ id: string; email: string } | null>(null);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [audit, setAudit] = useState<{ action: string; detail: unknown; createdAt: string }[]>(
-    []
-  );
-  const [transfer, setTransfer] = useState({
-    fromAccountId: "",
-    toAccountId: "",
-    amount: "",
-  });
-  const [txnMsg, setTxnMsg] = useState<string | null>(null);
-  const [redisKey, setRedisKey] = useState("pref");
-  const [redisVal, setRedisVal] = useState("demo");
-  const [redisGetResult, setRedisGetResult] = useState<string | null>(null);
-  const [redisKeys, setRedisKeys] = useState<string[]>([]);
-
-  const load = useCallback(async () => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
-    const meRes = await api<{ user?: { id: string; email: string }; error?: string }>(
-      "/api/auth/me"
-    );
-    if (!meRes.ok) {
-      setToken(null);
-      router.replace("/login");
-      return;
-    }
-    setMe(meRes.data.user ?? null);
-    const accRes = await api<{ accounts: Account[] }>("/api/accounts");
-    if (accRes.ok) setAccounts(accRes.data.accounts ?? []);
-    const audRes = await api<{ items: typeof audit }>("/api/audit");
-    if (audRes.ok) setAudit(audRes.data.items ?? []);
-    const rk = await api<{ keys: string[] }>("/api/redis/keys");
-    if (rk.ok) setRedisKeys(rk.data.keys ?? []);
-  }, [router]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadStats();
+  }, []);
 
-  async function createAccount() {
-    setTxnMsg(null);
-    const res = await api<{ message?: string }>("/api/accounts", {
-      method: "POST",
-      json: { label: `extra-${Date.now()}` },
-    });
-    setTxnMsg(res.ok ? res.data.message ?? "OK" : JSON.stringify(res.data));
-    await load();
-  }
+  async function loadStats() {
+    try {
+      // Simular carga de estadísticas - en un sistema real, tendrías endpoints específicos
+      const [productosRes, clientesRes, proveedoresRes, ventasRes] = await Promise.all([
+        api<any[]>('/api/productos'),
+        api<any[]>('/api/clientes'),
+        api<any[]>('/api/proveedores'),
+        api<any[]>('/api/ventas'),
+      ]);
 
-  async function doTransfer(e: React.FormEvent) {
-    e.preventDefault();
-    setTxnMsg(null);
-    const amount = Number(transfer.amount);
-    if (!transfer.fromAccountId || !transfer.toAccountId || !(amount > 0)) {
-      setTxnMsg("Completa cuentas y monto.");
-      return;
-    }
-    const res = await api<{ message?: string; error?: string }>("/api/transactions/transfer", {
-      method: "POST",
-      json: {
-        fromAccountId: transfer.fromAccountId,
-        toAccountId: transfer.toAccountId,
-        amount,
-      },
-    });
-    if (res.ok) {
-      setTxnMsg(JSON.stringify(res.data, null, 2));
-    } else {
-      setTxnMsg(typeof res.data === "object" ? JSON.stringify(res.data) : String(res.data));
-    }
-    await load();
-  }
+      const productos = productosRes.ok ? productosRes.data || [] : [];
+      const clientes = clientesRes.ok ? clientesRes.data || [] : [];
+      const proveedores = proveedoresRes.ok ? proveedoresRes.data || [] : [];
+      const ventas = ventasRes.ok ? ventasRes.data || [] : [];
 
-  async function redisSet() {
-    setTxnMsg(null);
-    const res = await api("/api/redis/set", {
-      method: "POST",
-      json: { key: redisKey, value: redisVal, ttlSeconds: 3600 },
-    });
-    setTxnMsg(res.ok ? JSON.stringify(res.data) : JSON.stringify(res.data));
-    await load();
-  }
+      const totalVentas = ventas.reduce((sum: number, v: any) => sum + (v.total || 0), 0);
+      const productosBajoStock = productos.filter((p: any) => p.stock < 10).length;
 
-  async function fetchRedisGet() {
-    const res = await api<{ value: string | null }>(
-      `/api/redis/get?key=${encodeURIComponent(redisKey)}`
-    );
-    setRedisGetResult(res.ok ? res.data.value : JSON.stringify(res.data));
-  }
-
-  async function redisFlush() {
-    if (!confirm("¿Ejecutar FLUSHALL? Borra todas las claves (incluye sesiones).")) return;
-    const res = await api("/api/redis/flushall", { method: "POST" });
-    setTxnMsg(JSON.stringify(res.data, null, 2));
-    if (res.ok) {
-      setToken(null);
-      router.replace("/login");
+      setStats({
+        totalVentas,
+        totalProductos: productos.length,
+        totalClientes: clientes.length,
+        totalProveedores: proveedores.length,
+        ventasMes: totalVentas, // Simplificado
+        productosBajoStock,
+      });
+    } catch (error) {
+      console.error("Error loading stats:", error);
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function logout() {
-    await api("/api/auth/logout", { method: "POST" });
-    setToken(null);
-    router.replace("/login");
-  }
-
-  if (!me) {
+  if (loading) {
     return (
-      <>
-        <nav>
-          <Link className="brand" href="/">
-            Demo académica
-          </Link>
-        </nav>
-        <p className="muted">Cargando…</p>
-      </>
+      <div className="flex items-center justify-center min-h-screen">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full"
+        />
+      </div>
     );
   }
+
+  const cards = [
+    {
+      title: "Ventas Totales",
+      value: `$${stats?.totalVentas.toFixed(2) || "0.00"}`,
+      icon: DollarSign,
+      color: "from-green-500 to-emerald-600",
+      bgColor: "bg-green-500/10",
+    },
+    {
+      title: "Productos en Inventario",
+      value: stats?.totalProductos || 0,
+      icon: Package,
+      color: "from-blue-500 to-cyan-600",
+      bgColor: "bg-blue-500/10",
+    },
+    {
+      title: "Clientes Registrados",
+      value: stats?.totalClientes || 0,
+      icon: Users,
+      color: "from-purple-500 to-pink-600",
+      bgColor: "bg-purple-500/10",
+    },
+    {
+      title: "Proveedores",
+      value: stats?.totalProveedores || 0,
+      icon: Truck,
+      color: "from-orange-500 to-red-600",
+      bgColor: "bg-orange-500/10",
+    },
+    {
+      title: "Ventas del Mes",
+      value: `$${stats?.ventasMes.toFixed(2) || "0.00"}`,
+      icon: TrendingUp,
+      color: "from-indigo-500 to-blue-600",
+      bgColor: "bg-indigo-500/10",
+    },
+    {
+      title: "Productos Bajo Stock",
+      value: stats?.productosBajoStock || 0,
+      icon: ShoppingCart,
+      color: "from-red-500 to-pink-600",
+      bgColor: "bg-red-500/10",
+    },
+  ];
 
   return (
-    <>
-      <nav>
-        <Link className="brand" href="/">
-          Demo académica
-        </Link>
-        <span className="muted">{me?.email}</span>
-        <button type="button" className="secondary" onClick={() => logout()}>
-          Cerrar sesión
-        </button>
-      </nav>
+    <div className="space-y-8">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-center"
+      >
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent mb-2">
+          Dashboard de Gestión
+        </h1>
+        <p className="text-gray-400 text-lg">
+          Bienvenido al Sistema de Gestión de Ventas e Inventario
+        </p>
+      </motion.div>
 
-      <h1>Panel</h1>
-      <p className="muted">
-        Rutas protegidas validan JWT y luego leen la sesión en Redis (<code>session:{'{id}'}</code>
-        ).
-      </p>
-
-      <div className="card">
-        <h2>Cuentas (PostgreSQL)</h2>
-        <p className="muted">Creación de registros: añade una segunda cuenta para probar la transferencia.</p>
-        <button type="button" onClick={createAccount}>
-          Nueva cuenta
-        </button>
-        <ul style={{ marginTop: "0.75rem" }}>
-          {accounts.map((a) => (
-            <li key={a.id}>
-              <code>{a.id}</code> — {a.label ?? ""} — saldo: <strong>{a.balance}</strong>
-            </li>
-          ))}
-        </ul>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {cards.map((card, index) => {
+          const Icon = card.icon;
+          return (
+            <motion.div
+              key={card.title}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              className={`p-6 rounded-xl shadow-lg border border-gray-700 ${card.bgColor} hover:shadow-xl transition-all duration-300`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-400 text-sm font-medium">{card.title}</p>
+                  <p className="text-3xl font-bold text-white mt-2">{card.value}</p>
+                </div>
+                <div className={`p-3 rounded-lg bg-gradient-to-r ${card.color}`}>
+                  <Icon size={24} className="text-white" />
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
 
-      <div className="card">
-        <h2>Transacción ACID (transferencia)</h2>
-        <form onSubmit={doTransfer}>
-          <div className="row">
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <label>Desde cuenta ID</label>
-              <select
-                value={transfer.fromAccountId}
-                onChange={(e) => setTransfer((t) => ({ ...t, fromAccountId: e.target.value }))}
-              >
-                <option value="">—</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.label} ({a.balance})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <label>Hacia cuenta ID</label>
-              <select
-                value={transfer.toAccountId}
-                onChange={(e) => setTransfer((t) => ({ ...t, toAccountId: e.target.value }))}
-              >
-                <option value="">—</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.label} ({a.balance})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ width: 120 }}>
-              <label>Monto</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={transfer.amount}
-                onChange={(e) => setTransfer((t) => ({ ...t, amount: e.target.value }))}
-              />
-            </div>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+        className="bg-gradient-to-r from-gray-800 to-gray-900 p-6 rounded-xl shadow-lg border border-gray-700"
+      >
+        <h2 className="text-2xl font-bold text-white mb-4">Resumen Ejecutivo</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-2">Estado del Inventario</h3>
+            <p className="text-gray-300">
+              Mantén un control óptimo de tu inventario. Actualmente tienes{" "}
+              <span className="font-semibold text-white">{stats?.totalProductos || 0}</span> productos
+              registrados, con <span className="font-semibold text-red-400">
+                {stats?.productosBajoStock || 0}
+              </span> productos que requieren atención por bajo stock.
+            </p>
           </div>
-          <button type="submit">Ejecutar transacción</button>
-        </form>
-        {txnMsg && (
-          <pre className="json" style={{ marginTop: "0.75rem" }}>
-            {txnMsg}
-          </pre>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Redis (SET / GET / keys)</h2>
-        <p className="muted">Claves con prefijo demo:{'{userId}:'}:…</p>
-        <div className="row">
-          <div style={{ flex: 1 }}>
-            <label>Clave corta</label>
-            <input value={redisKey} onChange={(e) => setRedisKey(e.target.value)} />
-          </div>
-          <div style={{ flex: 2 }}>
-            <label>Valor</label>
-            <input value={redisVal} onChange={(e) => setRedisVal(e.target.value)} />
+          <div>
+            <h3 className="text-lg font-semibold text-green-400 mb-2">Rendimiento de Ventas</h3>
+            <p className="text-gray-300">
+              Tus ventas totales ascienden a{" "}
+              <span className="font-semibold text-white">${stats?.totalVentas.toFixed(2) || "0.00"}</span>.
+              Continúa expandiendo tu base de clientes que actualmente cuenta con{" "}
+              <span className="font-semibold text-white">{stats?.totalClientes || 0}</span> registros.
+            </p>
           </div>
         </div>
-        <div className="row">
-          <button type="button" onClick={redisSet}>
-            SET
-          </button>
-          <button type="button" className="secondary" onClick={fetchRedisGet}>
-            GET
-          </button>
-        </div>
-        {redisGetResult !== null && (
-          <p className="muted">
-            Valor: <code>{redisGetResult}</code>
-          </p>
-        )}
-        <p className="muted">Keys: {redisKeys.join(", ") || "(ninguna)"}</p>
-        <button type="button" className="danger" onClick={redisFlush}>
-          FLUSHALL (requiere ALLOW_REDIS_FLUSH=true)
-        </button>
-      </div>
-
-      <div className="card">
-        <h2>Auditoría (MongoDB Atlas)</h2>
-        <p className="muted">Colección audit_logs (últimos eventos de este usuario).</p>
-        <ul style={{ paddingLeft: "1.25rem" }}>
-          {audit.map((a, i) => (
-            <li key={i}>
-              <strong>{a.action}</strong> — {new Date(a.createdAt).toLocaleString()} —{" "}
-              <code>{JSON.stringify(a.detail)}</code>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </>
+      </motion.div>
+    </div>
   );
 }
