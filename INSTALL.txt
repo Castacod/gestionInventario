@@ -1,0 +1,42 @@
+Instalación — demo académica (API Node + Next.js)
+
+Requisitos:
+- Node.js LTS (18+)
+- Docker Desktop (solo para Redis local)
+- Cuenta Supabase (Postgres) y MongoDB Atlas
+
+1) Redis con Docker (desde la raíz del proyecto):
+   docker compose up -d
+
+   Alternativa sin compose:
+   docker run -d --name redis-demo -p 6379:6379 redis:7-alpine
+
+2) Base relacional:
+   En Supabase: SQL Editor → pegar y ejecutar sql/init.sql
+
+3) Variables de entorno:
+   Copiar .env.example a api/.env y rellenar DATABASE_URL, MONGODB_URI, JWT_SECRET.
+   Crear web/.env.local con al menos:
+   NEXT_PUBLIC_API_URL=http://localhost:4000
+   NEXT_PUBLIC_SUPABASE_URL=https://TU_REF.supabase.co
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=tu_clave_publicable
+   (Si usas @supabase/supabase-js en el front; la API sigue usando DATABASE_URL con node-pg.)
+
+4) Dependencias:
+   npm install
+
+5) Desarrollo (API + Next en paralelo):
+   npm run dev
+
+   O por separado:
+   npm run dev:api
+   npm run dev:web
+
+URLs:
+- Front: http://localhost:3000
+- API: http://localhost:4000
+- Health: http://localhost:4000/api/health
+
+Notas:
+- FLUSHALL: solo con ALLOW_REDIS_FLUSH=true en api/.env (borra también sesiones).
+- DATABASE_URL: usar la cadena de conexión Postgres de Supabase (pooler 6543 o directo 5432).

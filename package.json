@@ -1,0 +1,16 @@
+{
+  "name": "jeff-academic-demo",
+  "private": true,
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev --workspace=api\" \"npm run dev --workspace=web\"",
+    "dev:api": "npm run dev --workspace=api",
+    "dev:web": "npm run dev --workspace=web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}
